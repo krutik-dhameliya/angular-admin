@@ -1,0 +1,740 @@
+<?php
+
+namespace App\Http\Controllers;
+use Auth;
+use DB;
+use Illuminate\Http\Request;
+use Redirect;
+use DateTime;
+use PDF;
+
+class InvoiceController extends Controller
+{
+    /**
+     * Display a listing of the resource.
+     *
+     * @return \Illuminate\Http\Response
+     */
+    public function index(Request $request)
+    {
+        $leadData = DB::table('leads')
+                ->select('lead_id','country','report_id','report_name','name')
+                ->where('lead_id',$request->id)
+                ->first();
+
+        $data = array(
+            'lead_id' => $request->id,
+            'report_id' => $leadData->report_id,
+            'report_name' => $leadData->report_name,
+            'name' => $leadData->name,
+            'country' => $leadData->country,
+        );
+        return view('addQuatationInvoice', compact('data'));
+    }
+
+
+    public function store(Request $request)
+    {
+        $this->validate($request,[
+            'name' => 'required|min:5|max:35',
+            'date' => 'required|date_format:Y-m-d',
+            'address' => 'required',
+            'mode_of_payment' => 'required',
+            'report_name' => 'required',
+            'license_type' => 'required',
+            'payment_term' => 'required',
+            'terms_of_delivery' => 'required',
+            'discount' => 'required',
+            'discount_amt' => 'required',
+            'tax_type' => 'required',
+            'tax_per' => 'required',
+            'tax_amt' => 'required',
+            'net_amt' => 'required',
+            'deliveryFormat' => 'required'
+        ],[
+            'name.required' => ' The name field is required.',
+            'name.min' => ' The name must be at least 5 characters.',
+            'name.max' => ' The name may not be greater than 35 characters.',
+            'date.required' => ' The date field is required.',
+            'address.required' => 'The address field is required.',
+            'mode_of_payment.required' => ' The mode of payment field is required.',
+            'report_name.required' => ' The report name field is required.',
+            'license_type.required' => ' The license type field is required.',
+            'payment_term.min' => ' The payment term must be at least 5 characters.',
+            'terms_of_delivery.max' => ' The terms of delivery may not be greater than 35 characters.',
+            'discount.required' => ' The discount field is required.',
+            'discount_amt.required' => ' The discount amount field is required.',
+            'tax_type.required' => ' The tax type field is required.',
+            'tax_per.required' => ' The tax percentage field is required.',
+            'tax_amt.required' => ' The tax amount field is required.',
+            'net_amt.required' => ' The net amount field is required.',
+            'deliveryFormat.required' => ' The delivery format field is required.'
+        ]);
+
+        $gst = 0;
+        $gst_amt = 0;
+        $igst = 0;
+        $igst_amt = 0;
+        if($request->tax_type == 'GST'){
+            $gst = $request->tax_per;
+            $gst_amt = $request->tax_amt;
+        }else{
+            $igst = $request->tax_per;
+            $igst_amt = $request->tax_amt;
+        }
+        $insertQuatationInvoice = array(
+            'invoice_date' => $request->date,
+            'name' => $request->name,
+            'address' => $request->address,
+            'lead_id' => $request->lead_id,
+            'mode_of_payment' => $request->mode_of_payment,
+            'payment_term' => $request->payment_term,
+            'terms_of_delivery' => $request->terms_of_delivery,
+            'gross_amt' => $request->unit_price,
+            'discount' => $request->discount,
+            'discount_amt' => $request->discount_amt,
+            'igst' => $igst,
+            'igst_amt' => $igst_amt,
+            'gst' => $gst,
+            'gst_amt' => $gst_amt,
+            'net_amt' => $request->net_amt,
+            'deliveryFormat' => $request->deliveryFormat,
+            'invoice_status' => 'active',
+        );
+        $quatationInvoiveId = DB::table('quotation_invoice')->insertGetId($insertQuatationInvoice);
+
+        $date = (int)date('Y') - 2000;
+        $invoiceno = 'MR' . $quatationInvoiveId . date('m') . $date;
+        $updateCondition = array('invoice_no'=>$invoiceno);
+        DB::table('quotation_invoice')->where('id',$quatationInvoiveId)->update($updateCondition);
+
+        $insertQuatationInvoiceReports = array(
+            'quotation_invoice_id' => $quatationInvoiveId,
+            'report_id' => $request->report_id,
+            'report_name' => $request->report_name,
+            'license' => $request->license_type,
+            'unit_price' => $request->unit_price,
+            'total' => $request->unit_price
+        );
+
+        DB::table('quatation_invoice_reports')->insert($insertQuatationInvoiceReports);
+        return redirect('/quatationInvoices');
+    }
+    public function update(Request $request)
+    {
+        $this->validate($request,[
+            'name' => 'required|min:5|max:35',
+            'date' => 'required|date_format:Y-m-d',
+            'address' => 'required',
+            'mode_of_payment' => 'required',
+            'report_name' => 'required',
+            'license_type' => 'required',
+            'payment_term' => 'required',
+            'terms_of_delivery' => 'required',
+            'discount' => 'required',
+            'discount_amt' => 'required',
+            'tax_type' => 'required',
+            'tax_per' => 'required',
+            'tax_amt' => 'required',
+            'net_amt' => 'required',
+            'deliveryFormat' => 'required'
+        ],[
+            'name.required' => ' The name field is required.',
+            'name.min' => ' The name must be at least 5 characters.',
+            'name.max' => ' The name may not be greater than 35 characters.',
+            'date.required' => ' The date field is required.',
+            'address.required' => 'The address field is required.',
+            'mode_of_payment.required' => ' The mode of payment field is required.',
+            'report_name.required' => ' The report name field is required.',
+            'license_type.required' => ' The license type field is required.',
+            'payment_term.min' => ' The payment term must be at least 5 characters.',
+            'terms_of_delivery.max' => ' The terms of delivery may not be greater than 35 characters.',
+            'discount.required' => ' The discount field is required.',
+            'discount_amt.required' => ' The discount amount field is required.',
+            'tax_type.required' => ' The tax type field is required.',
+            'tax_per.required' => ' The tax percentage field is required.',
+            'tax_amt.required' => ' The tax amount field is required.',
+            'net_amt.required' => ' The net amount field is required.',
+            'deliveryFormat.required' => ' The delivery format field is required.'
+        ]);
+
+        $gst = 0;
+        $gst_amt = 0;
+        $igst = 0;
+        $igst_amt = 0;
+        if($request->tax_type == 'GST'){
+            $gst = $request->tax_per;
+            $gst_amt = $request->tax_amt;
+        }else{
+            $igst = $request->tax_per;
+            $igst_amt = $request->tax_amt;
+        }
+        $insertQuatationInvoice = array(
+            'invoice_date' => $request->date,
+            'name' => $request->name,
+            'address' => $request->address,
+            'mode_of_payment' => $request->mode_of_payment,
+            'payment_term' => $request->payment_term,
+            'terms_of_delivery' => $request->terms_of_delivery,
+            'gross_amt' => $request->unit_price,
+            'discount' => $request->discount,
+            'discount_amt' => $request->discount_amt,
+            'igst' => $igst,
+            'igst_amt' => $igst_amt,
+            'gst' => $gst,
+            'gst_amt' => $gst_amt,
+            'net_amt' => $request->net_amt,
+            'deliveryFormat' => $request->deliveryFormat
+        );
+        $condition = array(
+            'id' => $request->invoice_id
+        );
+        $quatationInvoiveId = DB::table('quotation_invoice')->where($condition)->update($insertQuatationInvoice);
+
+        $insertQuatationInvoiceReports = array(
+            'report_name' => $request->report_name,
+            'license' => $request->license_type,
+            'unit_price' => $request->unit_price,
+            'total' => $request->unit_price
+        );
+        $condition = array(
+            'id' => $request->report_id
+        );
+        DB::table('quatation_invoice_reports')->where($condition)->update($insertQuatationInvoiceReports);
+        return redirect('/quatationInvoices');
+    }
+
+    public function show()
+    {
+        return view('quatationInvoices');
+    }
+    public function showFinalInvoice()
+    {
+        return view('finalInvoices');
+    }
+    public function showDispatchMails()
+    {
+        return view('dispatchMails');
+    }
+
+ 
+
+    public function getQuatationIncoices(Request $request)
+    {
+        $col = array(
+            0   =>  'invoice_no',
+            1   =>  'invoice_date',
+            2   =>  'name',
+            3   =>  'net_amt',
+            4   =>  'mode_of_payment'
+        );
+        $totalData = DB::table('quotation_invoice')->count();
+        $start = $request->get('start');
+        $length = $request->get('length');
+        $search = $request->get('search')['value'];
+        $order_column = $col[$request->get('order')[0]['column']];
+        $orderBy = $request->get('order')[0]['dir'];
+        if ($search == NULL || empty(trim($search))) {
+            $invoices = DB::table('quotation_invoice')
+                ->select('id','invoice_no', 'invoice_date', 'name', 'net_amt', 'mode_of_payment')
+                ->orderBy($order_column, $orderBy)
+                ->offset( $start)
+                ->limit($length)
+                ->get();
+                
+            $totalFilter = DB::table('quotation_invoice')
+                            ->select('id')
+                            ->count();
+        } else {
+            $invoices = DB::table('quotation_invoice')
+                ->select('id','invoice_no', 'invoice_date', 'name', 'net_amt', 'mode_of_payment')
+                ->where('invoice_no', 'like', '%' . $search . '%')
+                ->orWhere('invoice_date', 'like', '%' . $search . '%')
+                ->orWhere('name', 'like', '%' . $search . '%')
+                ->orWhere('net_amt', 'like', '%' . $search . '%')
+                ->orWhere('mode_of_payment', 'like', '%' . $search . '%')
+                ->orderBy($order_column, $orderBy)
+                ->offset( $start)
+                ->limit($length)
+                ->get();
+                
+            $totalFilter = DB::table('quotation_invoice')
+                ->select('id')
+                ->where('invoice_no', 'like', '%' . $search . '%')
+                ->orWhere('invoice_date', 'like', '%' . $search . '%')
+                ->orWhere('name', 'like', '%' . $search . '%')
+                ->orWhere('net_amt', 'like', '%' . $search . '%')
+                ->orWhere('mode_of_payment', 'like', '%' . $search . '%')
+                ->count();
+        }
+        
+         
+        $data = array();
+        foreach ($invoices as $invoice) {
+            $subdata = array();
+            $subdata[] = $invoice->invoice_no;
+            $subdata[] = $invoice->invoice_date;
+            $subdata[] = $invoice->name;
+            $subdata[] = $invoice->net_amt;
+            $subdata[] = $invoice->mode_of_payment;
+            $url = 'viewQuatationInvoice/'.$invoice->id;
+            $subdata[] = '<a href="'.$url.'"  style="cursor:pointer;"><i class="fa fa-eye text-success"></i></a>';
+            $data[] = $subdata;
+        }
+        $json_data = array(
+            "draw"              =>  intval($request->get('draw')),
+            "recordsTotal"      =>  intval($totalData),
+            "recordsFiltered"   =>  intval($totalFilter),
+            "data"              =>  $data
+        );
+        return response()->json($json_data);
+    }
+    public function getFinalIncoices(Request $request)
+    {
+        $col = array(
+            0   =>  'invoice_no',
+            1   =>  'invoice_date',
+            2   =>  'name',
+            3   =>  'net_amt',
+            4   =>  'mode_of_payment'
+        );
+        $totalData = DB::table('final_invoice')->count();
+        $start = $request->get('start');
+        $length = $request->get('length');
+        $search = $request->get('search')['value'];
+        $order_column = $col[$request->get('order')[0]['column']];
+        $orderBy = $request->get('order')[0]['dir'];
+        if ($search == NULL || empty(trim($search))) {
+            $invoices = DB::table('final_invoice')
+                ->select('final_invoice_id','invoice_no', 'invoice_date', 'name', 'net_amt', 'mode_of_payment')
+                ->orderBy($order_column, $orderBy)
+                ->offset( $start)
+                ->limit($length)
+                ->get();
+                
+            $totalFilter = DB::table('final_invoice')
+                            ->select('final_invoice_id')
+                            ->count();
+        } else {
+            $invoices = DB::table('final_invoice')
+                ->select('final_invoice_id','invoice_no', 'invoice_date', 'name', 'net_amt', 'mode_of_payment')
+                ->where('invoice_no', 'like', '%' . $search . '%')
+                ->orWhere('invoice_date', 'like', '%' . $search . '%')
+                ->orWhere('name', 'like', '%' . $search . '%')
+                ->orWhere('net_amt', 'like', '%' . $search . '%')
+                ->orWhere('mode_of_payment', 'like', '%' . $search . '%')
+                ->orderBy($order_column, $orderBy)
+                ->offset( $start)
+                ->limit($length)
+                ->get();
+                
+            $totalFilter = DB::table('final_invoice')
+                ->select('final_invoice_id')
+                ->where('invoice_no', 'like', '%' . $search . '%')
+                ->orWhere('invoice_date', 'like', '%' . $search . '%')
+                ->orWhere('name', 'like', '%' . $search . '%')
+                ->orWhere('net_amt', 'like', '%' . $search . '%')
+                ->orWhere('mode_of_payment', 'like', '%' . $search . '%')
+                ->count();
+        }
+        
+         
+        $data = array();
+        foreach ($invoices as $invoice) {
+            $subdata = array();
+            $subdata[] = $invoice->invoice_no;
+            $subdata[] = $invoice->invoice_date;
+            $subdata[] = $invoice->name;
+            $subdata[] = $invoice->net_amt;
+            $subdata[] = $invoice->mode_of_payment;
+            $url = 'viewFinalInvoice/'.$invoice->final_invoice_id;
+            if(Auth::user()->user_dept_name == 'Sales'){
+                $subdata[] = '<a href="'.$url.'"  style="cursor:pointer;"><i class="fa fa-eye text-success"></i></a>&nbsp&nbsp&nbsp<i class="fa fa-paper-plane text-success" data-toggle="modal" data-target="#mailModal" onclick="mailForm(' . $invoice->final_invoice_id . ')" style="cursor:pointer;"></i>';
+            }else{
+                $subdata[] = '<a href="'.$url.'"  style="cursor:pointer;"><i class="fa fa-eye text-success"></i></a>';
+            }
+            $data[] = $subdata;
+        }
+        $json_data = array(
+            "draw"              =>  intval($request->get('draw')),
+            "recordsTotal"      =>  intval($totalData),
+            "recordsFiltered"   =>  intval($totalFilter),
+            "data"              =>  $data
+        );
+        return response()->json($json_data);
+    }
+    public function getDispatchMails(Request $request)
+    {
+        $col = array(
+            0   =>  'sales_executive',
+            1   =>  'subject',
+            2   =>  'message',
+            3   =>  'date',
+            4   =>  'lead_id'
+        );
+        $totalData = DB::table('dispatchmail')->count();
+        $start = $request->get('start');
+        $length = $request->get('length');
+        $search = $request->get('search')['value'];
+        $order_column = $col[$request->get('order')[0]['column']];
+        $orderBy = $request->get('order')[0]['dir'];
+        if ($search == NULL || empty(trim($search))) {
+            $invoices = DB::table('dispatchmail')
+                ->join('final_invoice', 'dispatchmail.invoice_id', 'final_invoice.final_invoice_id')
+                ->join('leads', 'final_invoice.lead_id', 'leads.lead_id')
+                ->join('categorylist', 'leads.report_cat_id', 'categorylist.id')
+                ->select('leads.report_name','categorylist.categoryName', 'dispatchmail.date', 'dispatchmail.status','dispatchmail.id')
+                ->orderBy($order_column, $orderBy)
+                ->offset( $start)
+                ->limit($length)
+                ->get();
+                
+            $totalFilter = DB::table('dispatchmail')
+                            ->select('id')
+                            ->count();
+        } else {
+            $invoices = DB::table('dispatchmail')
+                ->join('final_invoice', 'dispatchmail.invoice_id', 'final_invoice.final_invoice_id')
+                ->join('leads', 'final_invoice.lead_id', 'leads.lead_id')
+                ->join('categorylist', 'leads.report_cat_id', 'categorylist.id')
+                ->select('leads.report_name','categorylist.categoryName', 'dispatchmail.date', 'dispatchmail.status')  
+                ->where('leads.report_name', 'like', '%' . $search . '%')
+                ->orWhere('categorylist.categoryName', 'like', '%' . $search . '%')
+                ->orWhere('dispatchmail.date', 'like', '%' . $search . '%')
+                ->orWhere('dispatchmail.status', 'like', '%' . $search . '%')
+                ->orderBy($order_column, $orderBy)
+                ->offset( $start)
+                ->limit($length)
+                ->get();
+                
+            $totalFilter = DB::table('dispatchmail')
+                ->join('final_invoice', 'dispatchmail.invoice_id', 'final_invoice.final_invoice_id')
+                ->join('leads', 'final_invoice.lead_id', 'leads.lead_id')
+                ->join('categorylist', 'leads.report_cat_id', 'categorylist.id')
+                ->select('leads.report_name','categorylist.categoryName', 'dispatchmail.date', 'dispatchmail.status')  
+                ->where('leads.report_name', 'like', '%' . $search . '%')
+                ->orWhere('categorylist.categoryName', 'like', '%' . $search . '%')
+                ->orWhere('dispatchmail.date', 'like', '%' . $search . '%')
+                ->orWhere('dispatchmail.status', 'like', '%' . $search . '%')
+                ->count();
+        }
+        
+         
+        $data = array();
+        foreach ($invoices as $invoice) {
+            $subdata = array();
+            $subdata[] = $invoice->report_name;
+            $subdata[] = $invoice->categoryName;
+            $subdata[] = $invoice->date;
+            if($invoice->status == 0 || $invoice->status == '0'){
+                $onClick = "changeStatus('1','" . $invoice->id . "')";
+                $subdata[] = '<button onclick='. $onClick . ' type="button" id="' . $invoice->id . '" class="btn btn-danger">Not Sent</button>';
+            }else{
+                $onClick = "changeStatus('0','" . $invoice->id . "')";
+                $subdata[] = '<button onclick='. $onClick . ' type="button" id="' . $invoice->id . '" class="btn btn-success">Sent</button>';
+            }
+            $data[] = $subdata;
+        }
+        $json_data = array(
+            "draw"              =>  intval($request->get('draw')),
+            "recordsTotal"      =>  intval($totalData),
+            "recordsFiltered"   =>  intval($totalFilter),
+            "data"              =>  $data
+        );
+        return response()->json($json_data);
+    }
+
+    public function quatationInvoiceDetails(Request $request)
+    {
+        $invoiceData = DB::table('quotation_invoice')
+                ->join('quatation_invoice_reports','quotation_invoice.id','=','quatation_invoice_reports.quotation_invoice_id')
+                ->select('quotation_invoice.*','quatation_invoice_reports.*')
+                ->where('quotation_invoice.id',$request->id)
+                ->first();
+        if($invoiceData != null){
+            $invoiceData->quatationInvoicePage = true; 
+            $date = new DateTime($invoiceData->invoice_date);
+            $invoiceData->invoice_date = date_format($date,"d-m-Y");
+            return view('quatationInvoice', compact('invoiceData'));
+        }else{
+            abort(404,'Page not found.');
+        }
+    }
+    public function finalInvoiceDetails(Request $request)
+    {
+                $invoiceData = DB::table('final_invoice')
+                ->join('final_invoice_reports','final_invoice.final_invoice_id','=','final_invoice_reports.final_invoice_id')
+                ->select('final_invoice.*','final_invoice_reports.*')
+                ->where('final_invoice.final_invoice_id',$request->id)
+                ->first();
+        if($invoiceData != null){
+            $invoiceData->quatationInvoicePage = true; 
+            $date = new DateTime($invoiceData->invoice_date);
+            $invoiceData->invoice_date = date_format($date,"d-m-Y");
+            return view('finalInvoice', compact('invoiceData'));
+        }else{
+            abort(404,'Page not found.');
+        }
+    }
+
+
+    public function createFinalInvoice(Request $request){
+        $quatationInvoiceData = DB::table('quotation_invoice')->where('id',$request->invoiceId)->first();
+   
+        if($quatationInvoiceData == null){
+            return response()->json(array(
+                'success' => false,
+                'msg' => 'Invoice Not Found !'
+            ));
+        }
+        $quatationReportData = DB::table('quatation_invoice_reports')->where('quotation_invoice_id',$quatationInvoiceData->id)->first();
+        if($quatationReportData == null){
+            return response()->json(array(
+                'success' => false,
+                'msg' => 'Report Not Found !'
+            ));
+        }
+        $insertFinalInvoice = array(
+            'quatation_invoice_id' => $quatationInvoiceData->id,
+            'invoice_no' => $quatationInvoiceData->invoice_no,
+            'invoice_date' => $quatationInvoiceData->invoice_date,
+            'name' => $quatationInvoiceData->name,
+            'address' => $quatationInvoiceData->address,
+            'lead_id' => $quatationInvoiceData->lead_id,
+            'mode_of_payment' => $quatationInvoiceData->mode_of_payment,
+            'payment_term' => $quatationInvoiceData->payment_term,
+            'terms_of_delivery' => $quatationInvoiceData->terms_of_delivery,
+            'gross_amt' => $quatationInvoiceData->gross_amt,
+            'discount' => $quatationInvoiceData->discount,
+            'discount_amt' => $quatationInvoiceData->discount_amt,
+            'igst' => $quatationInvoiceData->igst,
+            'igst_amt' => $quatationInvoiceData->igst_amt,
+            'gst' => $quatationInvoiceData->gst,
+            'gst_amt' => $quatationInvoiceData->gst_amt,
+            'net_amt' => $quatationInvoiceData->net_amt,
+            'deliveryFormat' => $quatationInvoiceData->deliveryFormat,
+            'invoice_status' => $quatationInvoiceData->invoice_status,
+        );
+        $match = array(
+            'quatation_invoice_id' => $quatationInvoiceData->id
+        );
+        $inserted = DB::table('final_invoice')->updateOrInsert($match,$insertFinalInvoice);
+        if($inserted){
+            $finalInvoiceId = DB::getPdo()->lastInsertId();
+        }
+        else{
+            $finalInvoiceId = DB::table('final_invoice')->select('final_invoice_id')->where($match)->first();
+            $finalInvoiceId = $finalInvoiceId->final_invoice_id;
+        }
+
+        $insertFinalInvoiceReports = array(
+            'final_invoice_id' => $finalInvoiceId,
+            'report_id' => $quatationReportData->report_id,
+            'report_name' => $quatationReportData->report_name,
+            'license' => $quatationReportData->license,
+            'unit_price' => $quatationReportData->unit_price,
+            'total' => $quatationReportData->total
+        );
+        $match = array(
+            'final_invoice_id' => $finalInvoiceId
+        );
+        DB::table('final_invoice_reports')->updateOrInsert($match,$insertFinalInvoiceReports);
+        // DB::table('final_invoice_reports')->insertGetId($insertFinalInvoiceReports);
+
+        return response()->json(array(
+            'success' => true,
+            'msg' => 'Finalised'
+        ));
+
+    }
+    public function loadEditInvoice(Request $request)
+    {
+        $invoice = DB::table('quotation_invoice')->where('id',$request->id)->first();
+        
+        if($invoice == null){
+            abort(404,'Page not found.');
+        }
+        $report = DB::table('quatation_invoice_reports')->where('quotation_invoice_id',$invoice->id)->first();
+        if($report == null){
+            abort(404,'Page not found.');
+        }
+        if($invoice->igst == '0' || $invoice->igst == 0){
+            $invoice->tax_type = 'GST';
+            $invoice->tax_per = $invoice->gst;
+            $invoice->tax_amt = $invoice->gst_amt;
+        }else{
+            $invoice->tax_type = 'IGST';
+            $invoice->tax_per = $invoice->igst;
+            $invoice->tax_amt = $invoice->igst_amt;
+        }
+        $data = array(
+            'invoice' => $invoice,
+            'report' => $report
+        );
+        return view('editQuatationInvoice', compact('data'));
+    }
+    public function downloadInvoice(Request $request)
+    {
+        $invoiceData = DB::table('quotation_invoice')
+                ->join('quatation_invoice_reports','quotation_invoice.id','=','quatation_invoice_reports.quotation_invoice_id')
+                ->select('quotation_invoice.*','quatation_invoice_reports.*')
+                ->where('quotation_invoice.id',$request->invoiceId)
+                ->first();
+        if($invoiceData != null){
+            $name = '/crms/public/' . $invoiceData->invoice_no . ' ' . $invoiceData->name;
+            $date = new DateTime($invoiceData->invoice_date);
+            $invoiceData->invoice_date = date_format($date,"d-m-Y");
+            $invoiceData = (array)$invoiceData;
+            PDF::html('invoice_template.invoice',$invoiceData,$name);
+            return response()->json(array(
+                'success' => true,
+                'msg' => 'Finalised',
+                'name' => $name
+            ));
+        }else{
+            return response()->json(array(
+                'success' => false,
+                'msg' => 'Invoice Not Found !'
+            ));
+        }
+    }
+    public function downloadFinalInvoice(Request $request)
+    {
+        $invoiceData = DB::table('final_invoice')
+                ->join('final_invoice_reports','final_invoice.final_invoice_id','=','final_invoice_reports.final_invoice_id')
+                ->select('final_invoice.*','final_invoice_reports.*')
+                ->where('final_invoice.final_invoice_id',$request->id)
+                ->first();
+        if($invoiceData != null){
+            $name = '/crms/public/' . $invoiceData->invoice_no . ' ' . $invoiceData->name;
+            $date = new DateTime($invoiceData->invoice_date);
+            $invoiceData->invoice_date = date_format($date,"d-m-Y");
+            $invoiceData = (array)$invoiceData;
+            PDF::html('invoice_template.invoice',$invoiceData,$name);
+            return response()->json(array(
+                'success' => true,
+                'msg' => 'Finalised',
+                'name' => $name
+            ));
+        }else{
+            return response()->json(array(
+                'success' => false,
+                'msg' => 'Invoice Not Found !'
+            ));
+        }
+    }
+    public function changePaymentStatus(Request $request)
+    {
+        $where = array(
+            'final_invoice_id' => $request->invoiceId
+        );
+        $quatationInvoiceData = DB::table('final_invoice')->where($where)->first();
+   
+        if($quatationInvoiceData == null){
+            return response()->json(array(
+                'success' => false,
+                'msg' => 'Invoice Not Found !'
+            ));
+        }
+
+        $updateCondition = array('payment_status'=>$request->paymentStatus);
+        DB::table('final_invoice')->where($where)->update($updateCondition);
+
+        return response()->json(array(
+            'success' => true,
+            'msg' => 'Payment Status Changed Successfully !'
+        ));
+    }
+    public function changeDispatchMailStatus(Request $request)
+    {
+        $where = array(
+            'id' => $request->id
+        );
+        $quatationInvoiceData = DB::table('dispatchmail')->where($where)->first();
+   
+        if($quatationInvoiceData == null){
+            return response()->json(array(
+                'success' => false,
+                'msg' => 'Mail Not Found !'
+            ));
+        }
+        if($request->status != 1 && $request->status != '1'){
+            if($request->status != 0 && $request->status != '0'){
+                return response()->json(array(
+                    'success' => false,
+                    'msg' => 'Status Invalid !'
+                ));
+            }
+        }
+
+        $updateCondition = array('status'=>$request->status);
+        DB::table('dispatchmail')->where($where)->update($updateCondition);
+    
+        if($request->status == 1 || $request->status == '1'){
+            $html = 'Sent';
+            $removeClass = 'btn-danger';
+            $addClass = 'btn-success';
+            $onclick = "changeStatus('0','" . $request->id . "')";
+        }else{
+            $html = 'Not Sent';
+            $removeClass = 'btn-success';
+            $addClass = 'btn-danger';
+            $onclick = "changeStatus('1','" . $request->id . "')";
+        }
+        return response()->json(array(
+            'success' => true,
+            'msg' => 'Mail Status Changed Successfully !',
+            'html' => $html,
+            'removeClass' => $removeClass,
+            'addClass' => $addClass,
+            'onclick' => $onclick
+        ));
+    }
+
+    function sendDispatchMail(Request $request){
+
+        $this->validate($request,[
+            'subject' => 'required',
+            'date' => 'required|date_format:Y-m-d',
+            'invoice_id' => 'required'
+        ],[
+            'subject.required' => ' The subject field is required.',
+            'date.required' => ' The date field is required.',
+            'invoice_id.required' => 'The Invoice id field is required.'
+        ]);
+
+        $cat_id = DB::table('leads')
+            ->join('final_invoice', 'leads.lead_id', 'final_invoice.lead_id')
+            ->where('final_invoice.final_invoice_id',$request->invoice_id)
+            ->select('leads.report_cat_id')
+            ->first();
+        
+        $mails = DB::table('users')
+            ->where('user_dept_name','Research')
+            ->where('userCategoryId','like','%'.$cat_id->report_cat_id.'%')
+            ->select('email')
+            ->get();
+            
+        $recipient_mail = array();
+        foreach($mails as $t){
+            array_push($recipient_mail,$t->email);
+        }
+
+        $dispatchMailInsertData = array(
+            'recipient' => json_encode($recipient_mail),
+            'subject' => $request->subject,
+            'date' => $request->date,
+            'message' => $request->message,
+            'invoice_id' => $request->invoice_id,
+            'sales_executive' => Auth::user()->name
+        );
+
+        DB::table('dispatchmail')->insert($dispatchMailInsertData);
+        return response()->json(array(
+            'success' => true,
+            'msg' => 'Mail Sent Successfully !'
+        ));
+    }
+
+ 
+}
